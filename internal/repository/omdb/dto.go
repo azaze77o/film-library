@@ -45,6 +45,7 @@ func (m *moviePreviewDTO) toDomain() domain.MoviePreview {
 	return domain.MoviePreview{
 		ID:     domain.ImdbID(m.ID),
 		Title:  m.Title,
+		Year:   m.Year,
 		Type:   m.Type,
 		Poster: m.Poster,
 	}

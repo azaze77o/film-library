@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 type LibraryEntry struct {
 	UserID       UserID
@@ -9,3 +12,9 @@ type LibraryEntry struct {
 	IsWatched    bool
 	CreatedAt    time.Time
 }
+
+var (
+	ErrNotFound      = errors.New("not found")
+	ErrAlreadyExists = errors.New("library entry alredy exists")
+	ErrInvalidInput  = errors.New("invalid input")
+)
