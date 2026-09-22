@@ -13,8 +13,14 @@ type LibraryEntry struct {
 	CreatedAt    time.Time
 }
 
+// LibraryPatch для обновления признаков фильма: просмотрен, отметка избранное
+type LibraryPatch struct {
+	Favourite *bool
+	Watched   *bool
+}
+
 var (
 	ErrNotFound      = errors.New("not found")
-	ErrAlreadyExists = errors.New("library entry alredy exists")
+	ErrAlreadyExists = errors.New("library entry already exists")
 	ErrInvalidInput  = errors.New("invalid input")
 )

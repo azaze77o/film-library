@@ -22,7 +22,7 @@ type errorBody struct {
 	} `json:"error"`
 }
 
-// writeError - функция, пищущая ошибку на запрос.
+// writeError - функция, пишущая ошибку на запрос.
 // Использует структуру errorBody для ответа и функцию writeJSON для отправки
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	var b errorBody

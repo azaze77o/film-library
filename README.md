@@ -1,21 +1,38 @@
 # Film library
 
-REST API на Go: поиск фильмов через OMDb и личная библиотека (избранное / просмотрено). Хранилище библиотеки — in-memory: после перезапуска сервера коллекция пустая.
+REST API на Go: поиск фильмов через OMDb и личная библиотека (избранное / просмотрено). Библиотека хранится в PostgreSQL: данные переживают перезапуск сервера.
 
 Пользователя в API пока нет: все операции с библиотекой идут от фиксированного внутреннего id.
 
 ## Требования
 
-- Go 1.22+ (в модуле указан 1.23.4)
+- Go 1.25+ (версия модуля — `go 1.25.0`)
+- PostgreSQL: отдельная database, пользователь приложения — её владелец
+- [golang-migrate](https://github.com/golang-migrate/migrate) CLI для миграций
 - ключ [OMDb API](https://www.omdbapi.com/apikey.aspx) в переменной `OMDB_API_KEY`
 
 Создайте в корне репозитория файл `.env` (он в `.gitignore`):
 
 ```
 OMDB_API_KEY=ваш_ключ
+DATABASE_URL="postgres://пользователь:пароль@хост:5432/имя_базы?sslmode=disable"
 ```
 
-Либо экспортируйте переменную в окружении. Без ключа процесс API не стартует.
+Либо экспортируйте переменные в окружении. Без `OMDB_API_KEY` или `DATABASE_URL` процесс API не стартует. 
+
+## Миграции
+
+Схема — чистый SQL в `migrations/`, пары `*.up.sql` / `*.down.sql`. Применять до первого запуска API, из корня модуля:
+
+```bash
+source .env
+migrate -path ./migrations -database "$DATABASE_URL" up
+migrate -path ./migrations -database "$DATABASE_URL" version
+```
+
+Текущая версия схемы — `4`: `users` (с seed-строкой пользователя по умолчанию), `movies`, `library_entries`, индекс `(user_id, created_at DESC)` под список библиотеки.
+
+Откат на один шаг — `migrate ... down 1`. Уже применённые файлы не правят: изменение схемы — новая пара миграций.
 
 ## Запуск
 
@@ -25,7 +42,7 @@ OMDB_API_KEY=ваш_ключ
 go run ./cmd/api
 ```
 
-Сервер слушает `:8080`. Логи запросов — JSON в stdout (`method`, `path`, `status`, `duration`).
+Сервер слушает `:8080`. Логи запросов — JSON в stdout (`method`, `path`, `status`, `duration`). На старте проверяется подключение к базе (`db connected`); если база недоступна, процесс не поднимается.
 
 Остановка: `Ctrl+C` в том же терминале (не `Ctrl+Z` — процесс останется и займёт порт).
 
@@ -77,7 +94,7 @@ curl -i "http://localhost:8080/api/v1/search?q=matrix&page=1"
 # пустой поиск
 curl -i "http://localhost:8080/api/v1/search"
 
-# библиотека пустая
+# список библиотеки (пустая — `[]`)
 curl -i http://localhost:8080/api/v1/library
 
 # создать
@@ -98,7 +115,9 @@ curl -i -X DELETE http://localhost:8080/api/v1/library/tt0133093
 ```
 
 Тело `POST`: `imdb_id`, `title`, `year`, `type`, `poster`.  
-Тело `PATCH`: опционально `favourite` и/или `watched` (boolean). Повторный `POST` с тем же `imdb_id` → `409`. Нет записи → `404`.
+Тело `PATCH`: опционально `favourite` и/или `watched` (boolean); присланные поля обновляются, остальные остаются как были. Пустое тело `{}` → `400`. Повторный `POST` с тем же `imdb_id` → `409`. Нет записи → `404`.
+
+`DELETE` убирает запись из библиотеки, но не из каталога `movies`: фильм можно добавить снова. Повторный `DELETE` того же id → `404`.
 
 ## Postman
 
@@ -112,18 +131,22 @@ curl -i -X DELETE http://localhost:8080/api/v1/library/tt0133093
 ## Структура
 
 ```
-cmd/api                 — точка входа HTTP
-internal/domain         — сущности и доменные ошибки
-internal/service        — сценарии библиотеки и поиска
-internal/repository/memory — in-memory библиотека
-internal/repository/omdb   — исходящий клиент OMDb
-transport/httpapi       — хендлеры, роутер, ошибки, middleware
+cmd/api                      — точка входа HTTP, пул БД, сборка зависимостей
+migrations                   — SQL-миграции схемы (golang-migrate)
+internal/domain              — сущности, патч обновления, доменные ошибки
+internal/service             — сценарии библиотеки и поиска, интерфейс хранилища
+internal/repository/postgres — библиотека в PostgreSQL (squirrel + database/sql)
+internal/repository/memory   — in-memory библиотека (фейк для тестов)
+internal/repository/omdb     — исходящий клиент OMDb
+transport/httpapi            — хендлеры, роутер, ошибки, middleware
 ```
 
-
+Схема БД: `users` (id, seed `default`), `movies` (каталог по `imdb_id`), `library_entries` (связь `user_id` + `imdb_id` с флагами). Создание записи идёт одной транзакцией: upsert фильма в каталог, затем вставка в библиотеку.
 
 ## Замечания
 
 - Ответ поиска сериализуется полями домена (`Movies`, `TotalResults`, …).
 - `go build ./...` должен собираться: единственная точка входа — `cmd/api`.
+- In-memory хранилище в `main` не подключено, пакет оставлен как фейк для тестов.
+- Graceful shutdown не реализован: `Ctrl+C` обрывает процесс, пул закрывается при выходе из `main`.
 

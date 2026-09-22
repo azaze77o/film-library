@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS library_entries_user_created_at_idx;
