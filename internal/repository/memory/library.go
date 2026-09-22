@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"sync"
 
 	"github.com/project/omdbapp/internal/domain"
@@ -24,7 +25,7 @@ func NewLibraryStore() *LibraryStore {
 }
 
 // Create - создает для пользователя новую библиотеку, если ее еще нет и добавляет в нее фильм
-func (s *LibraryStore) Create(e domain.LibraryEntry) error {
+func (s *LibraryStore) Create(ctx context.Context, e domain.LibraryEntry) error {
 	// Блокируем создание библиотеки для предотвращения конкурентных записей
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -47,9 +48,9 @@ func (s *LibraryStore) Create(e domain.LibraryEntry) error {
 	return nil
 }
 
-// Get - получает конкретный запись с фильмом из коллекции пользователя
-func (s *LibraryStore) Get(u domain.UserID, id domain.ImdbID) (domain.LibraryEntry, error) {
-	// Блокируем чтение фильма пользователя, но не ограничиваем паралелльное чтение
+// Get - получает конкретную запись с фильмом из коллекции пользователя
+func (s *LibraryStore) Get(ctx context.Context, u domain.UserID, id domain.ImdbID) (domain.LibraryEntry, error) {
+	// Блокируем чтение фильма пользователя, но не ограничиваем параллельное чтение
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -66,9 +67,9 @@ func (s *LibraryStore) Get(u domain.UserID, id domain.ImdbID) (domain.LibraryEnt
 	return *entry, nil
 }
 
-// List - получает список всех запсией из коллекции пользователя
-func (s *LibraryStore) List(u domain.UserID) ([]domain.LibraryEntry, error) {
-	// Блокируем чтение фильмов пользователя, но не ограничиваем паралелльное чтение
+// List - получает список всех записей из коллекции пользователя
+func (s *LibraryStore) List(ctx context.Context, u domain.UserID) ([]domain.LibraryEntry, error) {
+	// Блокируем чтение фильмов пользователя, но не ограничиваем параллельное чтение
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -85,7 +86,7 @@ func (s *LibraryStore) List(u domain.UserID) ([]domain.LibraryEntry, error) {
 	return result, nil
 }
 
-func (s *LibraryStore) Update(u domain.UserID, id domain.ImdbID, mutate func(*domain.LibraryEntry)) (domain.LibraryEntry, error) {
+func (s *LibraryStore) Update(ctx context.Context, u domain.UserID, id domain.ImdbID, patch domain.LibraryPatch) (domain.LibraryEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -96,19 +97,25 @@ func (s *LibraryStore) Update(u domain.UserID, id domain.ImdbID, mutate func(*do
 		return domain.LibraryEntry{}, domain.ErrNotFound
 	}
 
-	// Выбираем из коллекции фильма и присваиваем его в переменную
+	// Выбираем фильм из коллекции и присваиваем его в переменную
 	// Если его нет, то возвращаем ошибку.
 	entry, ok := entries[id]
 	if !ok {
 		return domain.LibraryEntry{}, domain.ErrNotFound
 	}
 
-	mutate(entry)
+	if patch.Favourite != nil {
+		entry.IsFavorite = *patch.Favourite
+	}
+
+	if patch.Watched != nil {
+		entry.IsWatched = *patch.Watched
+	}
 
 	return *entry, nil
 }
 
-func (s *LibraryStore) Delete(u domain.UserID, id domain.ImdbID) error {
+func (s *LibraryStore) Delete(ctx context.Context, u domain.UserID, id domain.ImdbID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

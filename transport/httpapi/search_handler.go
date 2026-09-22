@@ -18,7 +18,7 @@ func NewSearchHandler(svc *service.SearchService, logger *slog.Logger) *SearchHa
 }
 
 func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
-	// Достаем название фильма из паратметры строки запроса
+	// Достаем название фильма из параметра строки запроса
 	q := r.URL.Query().Get("q")
 	if q == "" {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "query q is required")
