@@ -5,15 +5,19 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/project/omdbapp/internal/service"
+	"github.com/project/omdbapp/internal/domain"
 )
 
+type searchService interface {
+	Search(title string, page int) (domain.SearchResult, error)
+}
+
 type SearchHandler struct {
-	svc    *service.SearchService
+	svc    searchService
 	logger *slog.Logger
 }
 
-func NewSearchHandler(svc *service.SearchService, logger *slog.Logger) *SearchHandler {
+func NewSearchHandler(svc searchService, logger *slog.Logger) *SearchHandler {
 	return &SearchHandler{svc: svc, logger: logger}
 }
 

@@ -136,9 +136,8 @@ migrations                   — SQL-миграции схемы (golang-migrate
 internal/domain              — сущности, патч обновления, доменные ошибки
 internal/service             — сценарии библиотеки и поиска, интерфейс хранилища
 internal/repository/postgres — библиотека в PostgreSQL (squirrel + database/sql)
-internal/repository/memory   — in-memory библиотека (фейк для тестов)
 internal/repository/omdb     — исходящий клиент OMDb
-transport/httpapi            — хендлеры, роутер, ошибки, middleware
+internal/transport/httpapi   — хендлеры, роутер, ошибки, middleware
 ```
 
 Схема БД: `users` (id, seed `default`), `movies` (каталог по `imdb_id`), `library_entries` (связь `user_id` + `imdb_id` с флагами). Создание записи идёт одной транзакцией: upsert фильма в каталог, затем вставка в библиотеку.
@@ -147,6 +146,5 @@ transport/httpapi            — хендлеры, роутер, ошибки, m
 
 - Ответ поиска сериализуется полями домена (`Movies`, `TotalResults`, …).
 - `go build ./...` должен собираться: единственная точка входа — `cmd/api`.
-- In-memory хранилище в `main` не подключено, пакет оставлен как фейк для тестов.
 - Graceful shutdown не реализован: `Ctrl+C` обрывает процесс, пул закрывается при выходе из `main`.
 

@@ -45,8 +45,8 @@ func (r libraryRow) toDomain() domain.LibraryEntry {
 			Type:   kind,
 			Poster: poster,
 		},
-		IsFavorite: r.IsFavourite,
-		IsWatched:  r.IsWatched,
-		CreatedAt:  r.CreatedAt,
+		IsFavourite: r.IsFavourite,
+		IsWatched:   r.IsWatched,
+		CreatedAt:   r.CreatedAt,
 	}
 }
