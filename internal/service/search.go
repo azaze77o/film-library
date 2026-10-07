@@ -3,6 +3,8 @@
 package service
 
 import (
+	"strings"
+
 	"github.com/project/omdbapp/internal/domain"
 )
 
@@ -19,5 +21,9 @@ func NewSearchService(repo SearchRepository) *SearchService {
 }
 
 func (s *SearchService) Search(title string, page int) (domain.SearchResult, error) {
+	if strings.TrimSpace(title) == "" {
+		return domain.SearchResult{}, domain.ErrInvalidInput
+	}
+
 	return s.repo.Search(title, page)
 }

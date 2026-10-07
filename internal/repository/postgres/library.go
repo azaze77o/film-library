@@ -134,7 +134,7 @@ func (s *LibraryStore) Create(ctx context.Context, e domain.LibraryEntry) error 
 		Values(
 			string(e.UserID),
 			string(e.MoviePreview.ID),
-			e.IsFavorite,
+			e.IsFavourite,
 			e.IsWatched,
 			e.CreatedAt,
 		)

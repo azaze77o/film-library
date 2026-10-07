@@ -8,7 +8,7 @@ import (
 type LibraryEntry struct {
 	UserID       UserID
 	MoviePreview MoviePreview
-	IsFavorite   bool
+	IsFavourite  bool
 	IsWatched    bool
 	CreatedAt    time.Time
 }

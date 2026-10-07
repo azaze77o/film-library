@@ -12,18 +12,18 @@ import (
 	"github.com/project/omdbapp/internal/repository/omdb"
 	"github.com/project/omdbapp/internal/repository/postgres"
 	"github.com/project/omdbapp/internal/service"
-	"github.com/project/omdbapp/transport/httpapi"
+	"github.com/project/omdbapp/internal/transport/httpapi"
 )
 
 func main() {
-	// 1. Создаем ctx для старта приложения. В запросах будет использоваться свой контекст
+	// Создаем ctx для старта приложения. В запросах будет использоваться свой контекст
 	// Создаем logger для логирования работы сервера.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
-	// 2. Загружаем ключ API
+	// Загружаем ключ API
 	if err := godotenv.Load(); err != nil {
 		log.Println("Предупреждение файл .env не найден, использую переменные окружения.")
 	}
@@ -32,7 +32,13 @@ func main() {
 		log.Fatal("OMDB_API_KEY не задан. Создайте файл .env или задайте переменную окружения.")
 	}
 
-	// 3. Инициализируем подключение к PostgreSQL
+	// Читаетм адрес внешнего агреатора фильмов OMDb API
+	baseURL := os.Getenv("OMDB_BASE_URL")
+	if baseURL == "" {
+		log.Fatal("OMDB_BASE_URL не задан. Создайте файл .env или задайте URL OMDb API.")
+	}
+
+	// Инициализируем подключение к PostgreSQL
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL не задан. Создайте файл .env или задайте адрес подключения.")
@@ -45,18 +51,18 @@ func main() {
 
 	logger.Info("db connected")
 
-	// 4. Собираем зависимости: репозитории -> сервисы
-	// 4.1 Для поиска
-	searchClient := omdb.NewClient(apiKey)
+	// Собираем зависимости: репозитории -> сервисы
+	// Для поиска
+	searchClient := omdb.NewClient(baseURL, apiKey)
 	searchSrv := service.NewSearchService(searchClient)
 
-	// 4.2 Для хранения и управления библиотекой фильмов
+	// Для хранения и управления библиотекой фильмов
 	store := postgres.NewLibraryStore(db)
 	libSrv := service.NewLibraryService(store)
 
-	// 4.3 Для хранения данных
+	// Для хранения данных
 
-	// 5.Поднимаем сервер
+	// Поднимаем сервер
 	router := httpapi.NewRouter(libSrv, searchSrv, logger)
 
 	addr := ":8080"

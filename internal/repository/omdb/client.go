@@ -11,17 +11,17 @@ import (
 	"github.com/project/omdbapp/internal/domain"
 )
 
-const baseURL = "http://www.omdbapi.com/"
-
 // *http.Client. Это «отправитель» — он умеет реально передавать запросы по сети и получать ответы, управлять соединениями
 type Client struct {
-	apiKey string
-	http   *http.Client
+	apiKey  string
+	baseURL string
+	http    *http.Client
 }
 
-func NewClient(apiKey string) *Client {
+func NewClient(baseURL, apiKey string) *Client {
 	return &Client{
-		apiKey: apiKey,
+		baseURL: baseURL,
+		apiKey:  apiKey,
 		http: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -42,7 +42,7 @@ func (c *Client) Search(title string, page int) (domain.SearchResult, error) {
 	// Инициализируем переменную для создания URL запроса
 	// params.Encode() кодирует все ключ-значения параметров для использования в URL
 	// внутри уже разделяя каждый параметр через &
-	u := baseURL + "?" + params.Encode()
+	u := c.baseURL + "?" + params.Encode()
 
 	// 1. Формируем GET запрос, по собранному URL - u, но не отправляем его.
 	req, err := http.NewRequest(http.MethodGet, u, nil)

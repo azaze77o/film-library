@@ -1,19 +1,29 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 
 	"github.com/project/omdbapp/internal/domain"
-	"github.com/project/omdbapp/internal/service"
 )
 
 // Пока нет пользователя, поэтому фиксируем общего
 const defaultUserID = domain.UserID("default")
 
+// Объявляем libraryService с тип интерфейс и методами,
+// сигнатура которых удовлетворяет методам сервисного слоя
+type libraryService interface {
+	List(ctx context.Context, u domain.UserID) ([]domain.LibraryEntry, error)
+	Create(ctx context.Context, u domain.UserID, m domain.MoviePreview) (domain.LibraryEntry, error)
+	Get(ctx context.Context, u domain.UserID, id domain.ImdbID) (domain.LibraryEntry, error)
+	Update(ctx context.Context, u domain.UserID, id domain.ImdbID, patch domain.LibraryPatch) (domain.LibraryEntry, error)
+	Delete(ctx context.Context, u domain.UserID, id domain.ImdbID) error
+}
+
 type LibraryHandler struct {
-	svc    *service.LibraryService
+	svc    libraryService
 	logger *slog.Logger
 }
 
@@ -30,7 +40,7 @@ type updateLibraryEntryRequest struct {
 	Watched   *bool `json:"watched"`
 }
 
-func NewLibraryHandler(svc *service.LibraryService, logger *slog.Logger) *LibraryHandler {
+func NewLibraryHandler(svc libraryService, logger *slog.Logger) *LibraryHandler {
 	return &LibraryHandler{svc: svc, logger: logger}
 }
 

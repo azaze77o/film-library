@@ -3,11 +3,9 @@ package httpapi
 import (
 	"log/slog"
 	"net/http"
-
-	"github.com/project/omdbapp/internal/service"
 )
 
-func NewRouter(lib *service.LibraryService, search *service.SearchService, logger *slog.Logger) http.Handler {
+func NewRouter(lib libraryService, search searchService, logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 
 	// Обработчики сервиса по управлению библиотекой пользователя
