@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -59,6 +60,13 @@ func TestHandleServiceError(t *testing.T) {
 			err:        fmt.Errorf("%w: invalid object ID", domain.ErrInvalidInput),
 			wantStatus: http.StatusBadRequest,
 			wantBody:   `{"error":{"code":"INVALID_INPUT","message":"invalid input: invalid object ID"}}`,
+		},
+		{
+			name:       "upstream timeout",
+			err:        fmt.Errorf("search OMDb: %w", context.DeadlineExceeded),
+			wantStatus: http.StatusGatewayTimeout,
+			wantBody:   `{"error":{"code":"TIMEOUT","message":"upstream timeout"}}`,
+			wantLogged: true,
 		},
 	}
 

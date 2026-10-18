@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 
 	"github.com/project/omdbapp/internal/domain"
@@ -13,8 +14,8 @@ type mockSearch struct {
 	mock.Mock
 }
 
-func (m *mockSearch) Search(title string, page int) (domain.SearchResult, error) {
-	args := m.Called(title, page)
+func (m *mockSearch) Search(ctx context.Context, title string, page int) (domain.SearchResult, error) {
+	args := m.Called(ctx, title, page)
 
 	var searchResult domain.SearchResult
 
@@ -50,12 +51,12 @@ func TestSearchService_Search_Success(t *testing.T) {
 	}
 
 	omdb := new(mockSearch)
-	omdb.On("Search", title, page).
+	omdb.On("Search", mock.Anything, title, page).
 		Return(want, nil).
 		Once()
 
 	svc := NewSearchService(omdb)
-	got, err := svc.Search(title, page)
+	got, err := svc.Search(t.Context(), title, page)
 
 	require.NoError(t, err)
 	assert.Equal(t, want, got)
@@ -69,9 +70,9 @@ func TestSearchService_Search_InvalidInput(t *testing.T) {
 
 	omdb := new(mockSearch)
 	svc := NewSearchService(omdb)
-	_, err := svc.Search(title, page)
+	_, err := svc.Search(t.Context(), title, page)
 
 	require.ErrorIs(t, err, domain.ErrInvalidInput)
 
-	omdb.AssertNotCalled(t, "Search", mock.Anything, mock.Anything)
+	omdb.AssertNotCalled(t, "Search", mock.Anything, mock.Anything, mock.Anything)
 }

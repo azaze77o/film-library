@@ -1,6 +1,7 @@
 package omdb
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -23,12 +24,12 @@ func NewClient(baseURL, apiKey string) *Client {
 		baseURL: baseURL,
 		apiKey:  apiKey,
 		http: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: 10 * time.Second,
 		},
 	}
 }
 
-func (c *Client) Search(title string, page int) (domain.SearchResult, error) {
+func (c *Client) Search(ctx context.Context, title string, page int) (domain.SearchResult, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -45,7 +46,7 @@ func (c *Client) Search(title string, page int) (domain.SearchResult, error) {
 	u := c.baseURL + "?" + params.Encode()
 
 	// 1. Формируем GET запрос, по собранному URL - u, но не отправляем его.
-	req, err := http.NewRequest(http.MethodGet, u, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return domain.SearchResult{}, fmt.Errorf("ошибка создания запроса: %w", err)
 	}

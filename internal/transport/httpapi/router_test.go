@@ -102,10 +102,11 @@ func (m *mockLibraryService) Delete(
 
 // Мок сервиса поиск фильмов
 func (m *mockSearchService) Search(
+	ctx context.Context,
 	title string,
 	page int,
 ) (domain.SearchResult, error) {
-	args := m.Called(title, page)
+	args := m.Called(ctx, title, page)
 
 	var searchResult domain.SearchResult
 
@@ -311,7 +312,7 @@ func TestRouter_Search_MissingQuery(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.JSONEq(t, `{"error":{"code":"INVALID_INPUT","message":"query q is required"}}`, rec.Body.String())
-	search.AssertNotCalled(t, "Search", mock.Anything, mock.Anything)
+	search.AssertNotCalled(t, "Search", mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestRouter_Search_BadPage проверяет, что router вызывает сервис поиска,
@@ -322,7 +323,7 @@ func TestRouter_Search_BadPage(t *testing.T) {
 	lib := new(mockLibraryService)
 	search := new(mockSearchService)
 
-	search.On("Search", "Friends", 1).
+	search.On("Search", mock.Anything, "Friends", 1).
 		Return(domain.SearchResult{}, nil).
 		Once()
 
