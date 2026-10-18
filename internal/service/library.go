@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -18,16 +19,31 @@ type LibraryStore interface {
 	Delete(ctx context.Context, u domain.UserID, id domain.ImdbID) error
 }
 
+type EventPublisher interface {
+	Publish(ctx context.Context, e domain.LibraryEvent) error
+}
+
 // movieIDPattern - шаблон корректного ID фильма
 var movieIDPattern = regexp.MustCompile(`^tt[0-9]+$`)
 
 type LibraryService struct {
-	store LibraryStore
-	now   func() time.Time // now передается как функция, чтобы можно было протестировать сервис
+	store   LibraryStore
+	publish EventPublisher
+	now     func() time.Time // now передается как функция, чтобы можно было протестировать сервис
+	logger  *slog.Logger
 }
 
-func NewLibraryService(store LibraryStore) *LibraryService {
-	return &LibraryService{store: store, now: time.Now}
+func NewLibraryService(
+	store LibraryStore,
+	publish EventPublisher,
+	logger *slog.Logger,
+) *LibraryService {
+	return &LibraryService{
+		store:   store,
+		publish: publish,
+		now:     time.Now,
+		logger:  logger,
+	}
 }
 
 func (s *LibraryService) Create(ctx context.Context, u domain.UserID, m domain.MoviePreview) (domain.LibraryEntry, error) {
@@ -45,6 +61,23 @@ func (s *LibraryService) Create(ctx context.Context, u domain.UserID, m domain.M
 
 	if err := s.store.Create(ctx, entry); err != nil {
 		return domain.LibraryEntry{}, err
+	}
+
+	// Инициализируем событие о создании новой записи в библиотеке фильмов
+	event := domain.LibraryEvent{
+		Type:       domain.EventLibraryEntryCreated,
+		UserID:     entry.UserID,
+		ImdbID:     entry.MoviePreview.ID,
+		OccurredAt: entry.CreatedAt,
+	}
+
+	if err := s.publish.Publish(ctx, event); err != nil {
+		s.logger.Warn(
+			"publish library event",
+			"error", err,
+			"event_type", event.Type,
+			"imdb_id", event.ImdbID,
+		)
 	}
 
 	return entry, nil

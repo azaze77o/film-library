@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -19,6 +20,9 @@ func handleServiceError(w http.ResponseWriter, logger *slog.Logger, err error) {
 		writeError(w, http.StatusConflict, "ALREADY_EXISTS", "resource already exists")
 	case errors.Is(err, domain.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+	case errors.Is(err, context.DeadlineExceeded):
+		logger.Warn("upstream timeout", "error", err)
+		writeError(w, http.StatusGatewayTimeout, "TIMEOUT", "upstream timeout")
 	default:
 		// Неожиданная ошибка: клиенту — нейтральное сообщение,
 		// подробности — только в лог (не палим внутренности наружу).

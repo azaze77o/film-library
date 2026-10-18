@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -12,7 +14,14 @@ import (
 )
 
 // Объявлем стуктуру нашего mock-теста
+//
+// для управления библиотекой фильмов
 type mockLibraryStore struct {
+	mock.Mock
+}
+
+// для публикации событий
+type mockPublisher struct {
 	mock.Mock
 }
 
@@ -24,80 +33,83 @@ func (m *mockLibraryStore) Create(ctx context.Context, e domain.LibraryEntry) er
 
 func (m *mockLibraryStore) Get(ctx context.Context, u domain.UserID, id domain.ImdbID) (domain.LibraryEntry, error) {
 	args := m.Called(ctx, u, id)
-
 	var libraryEntry domain.LibraryEntry
-
 	if value := args.Get(0); value != nil {
 		libraryEntry = value.(domain.LibraryEntry)
 	}
-
 	return libraryEntry, args.Error(1)
 }
 
 func (m *mockLibraryStore) List(ctx context.Context, u domain.UserID) ([]domain.LibraryEntry, error) {
 	args := m.Called(ctx, u)
-
 	value := args.Get(0)
 	if value == nil {
 		return nil, args.Error(1)
 	}
-
 	entries := value.([]domain.LibraryEntry)
 	return entries, args.Error(1)
 }
 
 func (m *mockLibraryStore) Update(ctx context.Context, u domain.UserID, id domain.ImdbID, patch domain.LibraryPatch) (domain.LibraryEntry, error) {
 	args := m.Called(ctx, u, id, patch)
-
 	var libraryEntry domain.LibraryEntry
-
 	if value := args.Get(0); value != nil {
 		libraryEntry = value.(domain.LibraryEntry)
 	}
-
 	return libraryEntry, args.Error(1)
 }
 
 func (m *mockLibraryStore) Delete(ctx context.Context, u domain.UserID, id domain.ImdbID) error {
 	args := m.Called(ctx, u, id)
-
 	return args.Error(0)
 }
 
-// Выполняем сами тесты для каждого из сценариев
-// Для метода создания фильма
+func (m *mockPublisher) Publish(ctx context.Context, e domain.LibraryEvent) error {
+	args := m.Called(ctx, e)
+	return args.Error(0)
+}
 
 // TestLibraryService_Create_Success - успешное создание записи в библиотеке фильмов
 func TestLibraryService_Create_Success(t *testing.T) {
-	// Объявляем константы
 	fixedTime := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
 	movie := domain.MoviePreview{ID: "tt0108778", Title: "Friends"}
 	userID := domain.UserID("default")
-
-	// Объявлем, что мы ждем по результатам теста
 	want := domain.LibraryEntry{
 		UserID:       userID,
 		MoviePreview: movie,
 		CreatedAt:    fixedTime,
 	}
+	event := domain.LibraryEvent{
+		Type:       domain.EventLibraryEntryCreated,
+		UserID:     userID,
+		ImdbID:     movie.ID,
+		OccurredAt: fixedTime,
+	}
 
-	// Инициализируем в памяти новый объект mock-функций (возвращзает указатель)
+	// Описания от mock-вызова хранилища
 	store := new(mockLibraryStore)
 	store.On("Create", mock.Anything, want).
 		Return(nil).
 		Once()
 
-	// Инициализируем в памяти новый сервис управления библиотекой
-	// Передаем нам mock-репозиторий
-	svc := NewLibraryService(store)
-	svc.now = func() time.Time { return fixedTime }
+	// Ожидание от mock-вызова публикации события
+	publisher := new(mockPublisher)
+	publisher.On("Publish", mock.Anything, event).
+		Return(nil).
+		Once()
 
+	// Инициализация логгера
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	// Инициализация и вызов сервиса управления библиотекой
+	svc := NewLibraryService(store, publisher, logger)
+	svc.now = func() time.Time { return fixedTime }
 	got, err := svc.Create(context.Background(), userID, movie)
 
 	require.NoError(t, err)
 	assert.Equal(t, want, got)
-
 	store.AssertExpectations(t)
+	publisher.AssertExpectations(t)
 }
 
 // TestLibraryService_Create_InvalidInput - ошибка создания записи в библиотеке фильмов. Не валидный ID.
@@ -107,7 +119,7 @@ func TestLibraryService_Create_InvalidInput(t *testing.T) {
 	userID := domain.UserID("default")
 
 	store := new(mockLibraryStore)
-	svc := NewLibraryService(store)
+	svc := NewLibraryService(store, nil, nil)
 
 	_, err := svc.Create(context.Background(), userID, movie)
 
@@ -120,18 +132,20 @@ func TestLibraryService_Create_ErrAlreadyExists(t *testing.T) {
 	movie := domain.MoviePreview{ID: "tt0108778", Title: "Friends"}
 	userID := domain.UserID("default")
 
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	publisher := new(mockPublisher)
+
 	store := new(mockLibraryStore)
 	store.On("Create", mock.Anything, mock.Anything).
 		Return(domain.ErrAlreadyExists).
 		Once()
 
-	svc := NewLibraryService(store)
-
+	svc := NewLibraryService(store, publisher, logger)
 	_, err := svc.Create(context.Background(), userID, movie)
 
 	require.ErrorIs(t, err, domain.ErrAlreadyExists)
-
 	store.AssertExpectations(t)
+	publisher.AssertNotCalled(t, "Publish", mock.Anything, mock.Anything)
 }
 
 // TestLibraryService_Update__Success - успешное обновление записи в библиотеке фильмов
@@ -160,8 +174,7 @@ func TestLibraryService_Update_Success(t *testing.T) {
 
 	// Инициализируем в памяти новый сервис управления библиотекой
 	// Передаем нам mock-репозиторий
-	svc := NewLibraryService(store)
-
+	svc := NewLibraryService(store, nil, nil)
 	got, err := svc.Update(context.Background(), userID, movieID, patch)
 
 	require.NoError(t, err)
@@ -181,8 +194,7 @@ func TestLibraryService_Update_InvalidInput(t *testing.T) {
 
 	// Инициализируем в памяти новый сервис управления библиотекой
 	// Передаем нам mock-репозиторий
-	svc := NewLibraryService(store)
-
+	svc := NewLibraryService(store, nil, nil)
 	_, err := svc.Update(context.Background(), userID, movieID, patch)
 
 	require.ErrorIs(t, err, domain.ErrInvalidInput)
@@ -193,7 +205,6 @@ func TestLibraryService_Update_InvalidInput(t *testing.T) {
 func TestLibraryService_Get_Success(t *testing.T) {
 	userID := domain.UserID("default")
 	movieID := domain.ImdbID("tt0108778")
-
 	want := domain.LibraryEntry{
 		UserID: userID,
 		MoviePreview: domain.MoviePreview{
@@ -209,8 +220,7 @@ func TestLibraryService_Get_Success(t *testing.T) {
 		Return(want, nil).
 		Once()
 
-	svc := NewLibraryService(store)
-
+	svc := NewLibraryService(store, nil, nil)
 	got, err := svc.Get(context.Background(), userID, movieID)
 
 	require.NoError(t, err)
@@ -237,8 +247,7 @@ func TestLibraryService_List_Success(t *testing.T) {
 		Return(want, nil).
 		Once()
 
-	svc := NewLibraryService(store)
-
+	svc := NewLibraryService(store, nil, nil)
 	got, err := svc.List(context.Background(), userID)
 
 	require.NoError(t, err)
@@ -256,8 +265,7 @@ func TestLibraryService_Delete_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	svc := NewLibraryService(store)
-
+	svc := NewLibraryService(store, nil, nil)
 	err := svc.Delete(context.Background(), userID, movieID)
 
 	require.NoError(t, err)

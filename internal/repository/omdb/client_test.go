@@ -1,11 +1,13 @@
 package omdb
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/project/omdbapp/internal/domain"
 	"github.com/stretchr/testify/require"
@@ -44,7 +46,7 @@ func TestClient_Search_Success(t *testing.T) {
 		"Response":"True"}`))
 	})
 
-	got, err := c.Search("Friends", 1)
+	got, err := c.Search(t.Context(), "Friends", 1)
 
 	require.NoError(t, err)
 	require.Equal(t, domain.SearchResult{
@@ -68,7 +70,7 @@ func TestClient_Search_HTTPStatus(t *testing.T) {
 
 	})
 
-	_, err := c.Search("Friends", 1)
+	_, err := c.Search(t.Context(), "Friends", 1)
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "500")
@@ -96,7 +98,7 @@ func TestClient_Search_PageZero(t *testing.T) {
 		"Response":"True"}`))
 	})
 
-	got, err := c.Search("Friends", 0)
+	got, err := c.Search(t.Context(), "Friends", 0)
 
 	require.NoError(t, err)
 	require.Equal(t, domain.SearchResult{
@@ -119,7 +121,7 @@ func TestClient_Search_BadJSON(t *testing.T) {
 		_, _ = w.Write([]byte(`{`))
 	})
 
-	_, err := c.Search("Friends", 1)
+	_, err := c.Search(t.Context(), "Friends", 1)
 
 	require.Error(t, err)
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
@@ -133,9 +135,38 @@ func TestClient_Search_NotFound(t *testing.T) {
 		_, _ = w.Write([]byte(`{"Response":"False","Error":"Movie not found!"}`))
 	})
 
-	_, err := c.Search("no-such-movie", 1)
+	_, err := c.Search(t.Context(), "no-such-movie", 1)
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Movie not found!")
 	require.NotErrorIs(t, err, domain.ErrNotFound)
+}
+
+func TestClient_Search_Timeout(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done() // ждём пока клиент не оборвёт запрос
+
+	})
+
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := c.Search(ctx, "Friends", 1)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Less(t, time.Since(start), time.Second)
+}
+
+func TestClient_Search_Canceled(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {})
+
+	// создаем контекст, связанный с контекстом теста
+	ctx, cancel := context.WithCancel(t.Context())
+
+	// отменяем контекст до вызова метода
+	cancel()
+
+	_, err := c.Search(ctx, "Friends", 1)
+	require.ErrorIs(t, err, context.Canceled)
 }

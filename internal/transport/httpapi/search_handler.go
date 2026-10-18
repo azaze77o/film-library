@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -9,7 +10,7 @@ import (
 )
 
 type searchService interface {
-	Search(title string, page int) (domain.SearchResult, error)
+	Search(ctx context.Context, title string, page int) (domain.SearchResult, error)
 }
 
 type SearchHandler struct {
@@ -38,7 +39,7 @@ func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.svc.Search(q, page)
+	result, err := h.svc.Search(r.Context(), q, page)
 	if err != nil {
 		handleServiceError(w, h.logger, err)
 		return
