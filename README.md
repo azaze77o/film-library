@@ -4,10 +4,30 @@ REST API на Go: поиск фильмов через OMDb и личная би
 
 Пользователя в API пока нет: все операции с библиотекой идут от фиксированного внутреннего id.
 
+## Окружения
+
+```text
+Компьютер — разработка
+├── Go-приложение из IDE (`go run`)
+├── PostgreSQL в Docker (сервис `db` в `compose.yaml`)
+└── миграции → только в локальную БД
+
+Виртуальная машина — условный production
+├── Go-приложение в Docker (образ из `Dockerfile`)
+├── текущая PostgreSQL, установленная в ОС
+└── миграции → в БД на виртуальной машине при обновлении
+```
+
+Образ `postgres:18-alpine` — локальная база. Сервис `db` публикует её на `127.0.0.1:5432`. Пользователь, пароль и имя базы — `film` / `film` / `film_library`. Данные лежат в томе `film-db-data`.
+
+`Dockerfile` — рецепт образа API: в нём собирается бинарник и остаётся только он. На компьютере для обычной работы этот образ не запускают, приложение стартует через `go run`. Тем же рецептом приложение потом запускают на виртуальной машине рядом с PostgreSQL, установленной в её ОС. Поднятие контейнера на виртуальной машине в этот файл не входит.
+
+В `compose.yaml` кроме `db` описаны сервисы `api` и `migrate`: весь стек контейнерами против локальной базы. В схеме выше для разработки их не запускают. `docker compose up` без имени сервиса поднимет и `api`, он займёт порт `8080`.
+
 ## Требования
 
 - Go 1.25+ (версия модуля — `go 1.25.0`)
-- PostgreSQL: отдельная database, пользователь приложения — её владелец
+- Docker — локальная PostgreSQL
 - [golang-migrate](https://github.com/golang-migrate/migrate) CLI для миграций
 - ключ [OMDb API](https://www.omdbapi.com/apikey.aspx) в переменной `OMDB_API_KEY`
 
@@ -15,31 +35,49 @@ REST API на Go: поиск фильмов через OMDb и личная би
 
 ```
 OMDB_API_KEY=ваш_ключ
+OMDB_BASE_URL=https://www.omdbapi.com/
 DATABASE_URL="postgres://пользователь:пароль@хост:5432/имя_базы?sslmode=disable"
 ```
 
-Либо экспортируйте переменные в окружении. Без `OMDB_API_KEY` или `DATABASE_URL` процесс API не стартует. 
+`DATABASE_URL` в `.env` — база виртуальной машины. Локальный адрес туда не записывают: его передают команде отдельно. Уже заданная переменная окружения важнее одноимённой строки из `.env`. Без `OMDB_API_KEY`, `OMDB_BASE_URL` или `DATABASE_URL` процесс API не стартует.
+
+## Локальная база
+
+Из корня репозитория:
+
+```bash
+docker compose up -d db
+```
+
+`docker compose ps` показывает `db` в статусе healthy. Остановка контейнера: `docker compose stop db`. `docker compose down` удаляет контейнер и оставляет том. `docker compose down -v` удаляет том вместе с локальными данными.
+
+Адрес этой базы с компьютера:
+
+```text
+postgres://film:film@127.0.0.1:5432/film_library?sslmode=disable
+```
 
 ## Миграции
 
-Схема — чистый SQL в `migrations/`, пары `*.up.sql` / `*.down.sql`. Применять до первого запуска API, из корня модуля:
+Схема — чистый SQL в `migrations/`, пары `*.up.sql` / `*.down.sql`. На компьютере их применяют в локальную базу, до первого запуска API, из корня модуля:
 
 ```bash
-source .env
-migrate -path ./migrations -database "$DATABASE_URL" up
-migrate -path ./migrations -database "$DATABASE_URL" version
+migrate -path ./migrations -database "postgres://film:film@127.0.0.1:5432/film_library?sslmode=disable" up
+migrate -path ./migrations -database "postgres://film:film@127.0.0.1:5432/film_library?sslmode=disable" version
 ```
 
 Текущая версия схемы — `5`: `users` (с seed-строкой пользователя по умолчанию), `movies`, `library_entries`, индекс `(user_id, created_at DESC)` под список библиотеки, `library_audit_log` — журнал событий библиотеки (только добавление строк).
 
-Откат на один шаг — `migrate ... down 1`. Уже применённые файлы не правят: изменение схемы — новая пара миграций.
+Откат на один шаг — та же строка адреса и `down 1`. Уже применённые файлы не правят: изменение схемы — новая пара миграций.
+
+На виртуальной машине при обновлении те же файлы применяют в установленную там PostgreSQL, подставляя её адрес. Команда с `DATABASE_URL` из `.env`, выполненная на компьютере разработки, меняет базу виртуальной машины.
 
 ## Запуск
 
-Из корня модуля (чтобы подхватился `.env`):
+Локально, из корня модуля. Ключ и адрес OMDb берутся из `.env`, база — из переменной в этой команде:
 
 ```bash
-go run ./cmd/api
+DATABASE_URL="postgres://film:film@127.0.0.1:5432/film_library?sslmode=disable" go run ./cmd/api
 ```
 
 Сервер слушает `:8080`. Логи запросов — JSON в stdout (`method`, `path`, `status`, `duration`). На старте проверяется подключение к базе (`db connected`) и запускается фоновый воркер аудита (`audit worker started`); если база недоступна, процесс не поднимается.
@@ -59,8 +97,9 @@ go run ./cmd/api
 ```bash
 ss -lptn | grep 8080
 kill <pid>
-go run ./cmd/api
 ```
+
+Дальше та же команда `go run`, что выше, с локальным `DATABASE_URL`.
 
 
 
@@ -143,9 +182,10 @@ curl -i -X DELETE http://localhost:8080/api/v1/library/tt0133093
 Проверить журнал:
 
 ```bash
-source .env
-psql "$DATABASE_URL" -c "SELECT id, event_type, imdb_id, occurred_at, created_at FROM library_audit_log ORDER BY id DESC LIMIT 5;"
+psql "postgres://film:film@127.0.0.1:5432/film_library?sslmode=disable" -c "SELECT id, event_type, imdb_id, occurred_at, created_at FROM library_audit_log ORDER BY id DESC LIMIT 5;"
 ```
+
+Тот же запрос к базе виртуальной машины — с её адресом из `.env`.
 
 Ограничения, которые заданы сознательно:
 
@@ -167,6 +207,9 @@ psql "$DATABASE_URL" -c "SELECT id, event_type, imdb_id, occurred_at, created_at
 
 ```
 cmd/api                      — точка входа HTTP, пул БД, сборка зависимостей
+Dockerfile                   — рецепт образа API для виртуальной машины
+compose.yaml                 — локальная PostgreSQL (сервис db)
+.dockerignore                — что не попадает в контекст сборки образа
 migrations                   — SQL-миграции схемы (golang-migrate)
 internal/domain              — сущности, патч обновления, доменные ошибки
 internal/service             — сценарии библиотеки и поиска, интерфейсы хранилища и издателя событий

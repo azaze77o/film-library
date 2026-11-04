@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: film
+      POSTGRES_PASSWORD: film
+      POSTGRES_DB: film_library
+    volumes:
+      - film-db-data:/var/lib/postgresql
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U film -d film_library"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+  
+  api:
+    build: .
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgres://film:film@db:5432/film_library?sslmode=disable"
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  migrate:
+    image: migrate/migrate:v4.20.1
+    volumes:
+      - ./migrations:/migrations
+    command:
+      - "-path"
+      - "/migrations"
+      - "-database"
+      - "postgres://film:film@db:5432/film_library?sslmode=disable"
+      - "up"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  film-db-data:
+    name: film-db-data
